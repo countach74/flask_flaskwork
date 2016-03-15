@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(
-    name='flaskwork',
+    name='flask_flaskwork',
     version='0.1.1',
     license='BSD',
     author='Tim Radke',
