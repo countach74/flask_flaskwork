@@ -8,7 +8,7 @@ except ImportError:
     from StringIO import StringIO
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
-from flask import jsonify, abort
+from flask import jsonify, abort, request, session
 
 
 class Flaskwork(object):

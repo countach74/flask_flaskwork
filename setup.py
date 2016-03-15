@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='flaskwork',
-    version='0.1.0',
+    version='0.1.1',
     license='BSD',
     author='Tim Radke',
     author_email='tim.is@self-proclaimed.ninja',
