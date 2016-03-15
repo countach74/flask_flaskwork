@@ -2,3 +2,4 @@
 /dist
 *.pyc
 /flask_flaskwork.egg-info
+/flaskwork.egg-info
