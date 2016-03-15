@@ -2,7 +2,10 @@ import uuid
 import time
 import cProfile
 import pstats
-from StringIO import StringIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
 from flask import jsonify, abort, request, session
