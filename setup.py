@@ -3,7 +3,8 @@ from setuptools import setup
 
 setup(
     name='flask_flaskwork',
-    version='0.1.6',
+    description='A Flask plugin to talk with the Flaskwork Chrome extension.',
+    version='0.1.7',
     license='BSD',
     author='Tim Radke',
     author_email='tim.is@self-proclaimed.ninja',

@@ -15,11 +15,12 @@ from threading import Thread, RLock
 
 
 class Flaskwork(object):
-    def __init__(self, app=None, cleanup_interval=None):
+    def __init__(self, app=None, cleanup_interval=None, route=None):
         self.app = app
         self.cleanup_interval = cleanup_interval or datetime.timedelta(
             seconds=30
         )
+        self.route = route or '/__flaskwork/<string:uuid>'
 
         self._request_info = {}
         self._request_lock = RLock()
@@ -100,7 +101,7 @@ class Flaskwork(object):
             self._cleanup_request_info()
             return response
 
-        @app.route('/__flaskwork/<string:uuid>')
+        @app.route(self.route)
         def flaskwork_uuid_route(uuid):
             with self._request_lock:
                 if uuid in self._request_info:
