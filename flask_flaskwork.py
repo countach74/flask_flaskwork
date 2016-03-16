@@ -10,50 +10,8 @@ except ImportError:
 from functools import reduce
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
-from flask import jsonify, abort, request, session
+from flask import jsonify, abort, request, session, url_for
 from threading import Thread, RLock
-
-
-class Interval(object):
-    def __init__(self, delay, start_immediately=True):
-        self.delay = delay
-        self.iteration = 0
-        self.running = False
-        self.start_immediately = start_immediately
-
-    def stop(self):
-        self.running = False
-
-    def __iter__(self):
-        self.running = True
-
-        if self.start_immediately:
-            self.iteration += 1
-            yield self
-
-        while self.running:
-            self.iteration += 1
-            last = 0
-            while last < self.delay:
-                last += 1
-                time.sleep(1)
-            yield self
-
-        raise StopIteration
-
-
-class FlaskworkCleanupThread(Thread):
-    daemon = True
-
-    def __init__(self, flaskwork, delay=30):
-        self.flaskwork = flaskwork
-        self.delay = delay
-        Thread.__init__(self)
-
-    def run(self):
-        for i in Interval(self.delay, False):
-            with self.flaskwork._request_lock:
-                print 'len of request info:', len(self.flaskwork._request_info)
 
 
 class Flaskwork(object):
@@ -135,6 +93,10 @@ class Flaskwork(object):
                         'session': dict(session)
                     })
                     response.headers['X-Flaskwork-UUID'] = request.uuid
+                    response.headers['X-Flaskwork-URL'] = url_for(
+                        'flaskwork_uuid_route', uuid=request.uuid,
+                        _external=True
+                    )
             self._cleanup_request_info()
             return response
 
