@@ -6,6 +6,7 @@ try:
     from StringIO import StringIO
 except ImportError:
     from io import StringIO
+from functools import reduce
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
 from flask import jsonify, abort, request, session
