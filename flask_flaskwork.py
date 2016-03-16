@@ -11,6 +11,7 @@ from functools import reduce
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
 from flask import jsonify, abort, request, session, url_for
+from flask.ctx import has_request_context
 from threading import Thread, RLock
 
 
@@ -73,32 +74,33 @@ class Flaskwork(object):
 
         @app.after_request
         def after_request(response):
-            with self._request_lock:
-                if hasattr(request, 'uuid') and (
-                        request.uuid in self._request_info):
-                    info = self._request_info[request.uuid]
-                    info.update({
-                        'end_time': time.time(),
-                        'request': {
-                            'url': request.url,
-                            'method': request.method,
-                            'headers': dict(request.headers),
-                            'url_rule': str(request.url_rule),
-                            'endpoint': request.endpoint,
-                            'view_args': request.view_args
-                        },
-                        'response': {
-                            'status': response.status_code,
-                            'headers': dict(response.headers)
-                        },
-                        'session': dict(session)
-                    })
-                    response.headers['X-Flaskwork-UUID'] = request.uuid
-                    response.headers['X-Flaskwork-URL'] = url_for(
-                        'flaskwork_uuid_route', uuid=request.uuid,
-                        _external=True
-                    )
-            self._cleanup_request_info()
+            if app.debug:
+                with self._request_lock:
+                    if hasattr(request, 'uuid') and (
+                            request.uuid in self._request_info):
+                        info = self._request_info[request.uuid]
+                        info.update({
+                            'end_time': time.time(),
+                            'request': {
+                                'url': request.url,
+                                'method': request.method,
+                                'headers': dict(request.headers),
+                                'url_rule': str(request.url_rule),
+                                'endpoint': request.endpoint,
+                                'view_args': request.view_args
+                            },
+                            'response': {
+                                'status': response.status_code,
+                                'headers': dict(response.headers)
+                            },
+                            'session': dict(session)
+                        })
+                        response.headers['X-Flaskwork-UUID'] = request.uuid
+                        response.headers['X-Flaskwork-URL'] = url_for(
+                            'flaskwork_uuid_route', uuid=request.uuid,
+                            _external=True
+                        )
+                self._cleanup_request_info()
             return response
 
         @app.route(self.route)
@@ -130,18 +132,17 @@ class Flaskwork(object):
         @listens_for(Engine, 'before_cursor_execute')
         def before_cursor_execute(
                 conn, cursor, statement, params, context, executemany):
-            conn.info.setdefault('query_start_time', []).append(time.time())
+            if app.debug:
+                conn.info.setdefault('query_start_time', []).append(
+                    time.time())
 
         @listens_for(Engine, 'after_cursor_execute')
         def after_cursor_execute(
                 conn, cursor, statement, params, context, executemany):
-            total_time = time.time() - conn.info['query_start_time'].pop(-1)
-
-            try:
-                request.url
-            except RuntimeError:
-                pass
-            else:
+            if app.debug and has_request_context():
+                total_time = (
+                    time.time() - conn.info['query_start_time'].pop(-1)
+                )
                 with self._request_lock:
                     if hasattr(request, 'uuid') and (
                             request.uuid in self._request_info):
