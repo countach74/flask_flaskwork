@@ -1,5 +1,6 @@
 import uuid
 import time
+import datetime
 import cProfile
 import pstats
 try:
@@ -9,15 +10,75 @@ except ImportError:
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
 from flask import jsonify, abort, request, session
+from threading import Thread, RLock
+
+
+class Interval(object):
+    def __init__(self, delay, start_immediately=True):
+        self.delay = delay
+        self.iteration = 0
+        self.running = False
+        self.start_immediately = start_immediately
+
+    def stop(self):
+        self.running = False
+
+    def __iter__(self):
+        self.running = True
+
+        if self.start_immediately:
+            self.iteration += 1
+            yield self
+
+        while self.running:
+            self.iteration += 1
+            last = 0
+            while last < self.delay:
+                last += 1
+                time.sleep(1)
+            yield self
+
+        raise StopIteration
+
+
+class FlaskworkCleanupThread(Thread):
+    daemon = True
+
+    def __init__(self, flaskwork, delay=30):
+        self.flaskwork = flaskwork
+        self.delay = delay
+        Thread.__init__(self)
+
+    def run(self):
+        for i in Interval(self.delay, False):
+            with self.flaskwork._request_lock:
+                print 'len of request info:', len(self.flaskwork._request_info)
 
 
 class Flaskwork(object):
-    def __init__(self, app=None):
+    def __init__(self, app=None, cleanup_interval=None):
         self.app = app
+        self.cleanup_interval = cleanup_interval or datetime.timedelta(
+            seconds=30
+        )
+
         self._request_info = {}
+        self._request_lock = RLock()
+        self._last_cleanup = datetime.datetime.now()
 
         if app:
             self.init_app(app)
+
+    def _cleanup_request_info(self):
+        with self._request_lock:
+            cutoff = datetime.datetime.now() - self.cleanup_interval
+            if self._last_cleanup < cutoff:
+                deleted_items = []
+                for request_uuid, info in self._request_info.items():
+                    if info['timestamp'] < cutoff:
+                        del(self._request_info[request_uuid])
+                        deleted_items.append(request_uuid)
+                self._last_cleanup = datetime.datetime.now()
 
     def init_app(self, app):
         original_dispatch_request = app.dispatch_request
@@ -30,8 +91,10 @@ class Flaskwork(object):
             s = StringIO()
             ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
             ps.print_stats()
-            if hasattr(request, 'uuid') and request.uuid in self._request_info:
-                self._request_info[request.uuid]['profile'] = s.getvalue()
+            with self._request_lock:
+                if hasattr(request, 'uuid') and (
+                        request.uuid in self._request_info):
+                    self._request_info[request.uuid]['profile'] = s.getvalue()
             return result
 
         app.dispatch_request = dispatch_request
@@ -40,55 +103,61 @@ class Flaskwork(object):
         def before_request():
             if app.debug and request.endpoint != 'flaskwork_uuid_route':
                 request.uuid = str(uuid.uuid4())
-                self._request_info[request.uuid] = {
-                    'queries': [],
-                    'start_time': time.time(),
-                    'end_time': None
-                }
+                with self._request_lock:
+                    self._request_info[request.uuid] = {
+                        'queries': [],
+                        'start_time': time.time(),
+                        'end_time': None,
+                        'timestamp': datetime.datetime.now()
+                    }
 
         @app.after_request
         def after_request(response):
-            if hasattr(request, 'uuid') and request.uuid in self._request_info:
-                info = self._request_info[request.uuid]
-                info.update({
-                    'end_time': time.time(),
-                    'request': {
-                        'url': request.url,
-                        'method': request.method,
-                        'headers': dict(request.headers),
-                        'url_rule': str(request.url_rule),
-                        'endpoint': request.endpoint,
-                        'view_args': request.view_args
-                    },
-                    'response': {
-                        'status': response.status_code,
-                        'headers': dict(response.headers)
-                    },
-                    'session': dict(session)
-                })
-                response.headers['X-Flaskwork-UUID'] = request.uuid
+            with self._request_lock:
+                if hasattr(request, 'uuid') and (
+                        request.uuid in self._request_info):
+                    info = self._request_info[request.uuid]
+                    info.update({
+                        'end_time': time.time(),
+                        'request': {
+                            'url': request.url,
+                            'method': request.method,
+                            'headers': dict(request.headers),
+                            'url_rule': str(request.url_rule),
+                            'endpoint': request.endpoint,
+                            'view_args': request.view_args
+                        },
+                        'response': {
+                            'status': response.status_code,
+                            'headers': dict(response.headers)
+                        },
+                        'session': dict(session)
+                    })
+                    response.headers['X-Flaskwork-UUID'] = request.uuid
+            self._cleanup_request_info()
             return response
 
         @app.route('/__flaskwork/<string:uuid>')
         def flaskwork_uuid_route(uuid):
-            if uuid in self._request_info:
-                info = self._request_info[uuid]
-                db_time = reduce(
-                    lambda a, b: a + b,
-                    map(lambda x: x['query_time'], info['queries']),
-                    0
-                )
-                return jsonify({
-                    'queries': info['queries'],
-                    'total_time': info['end_time'] - info['start_time'],
-                    'database_time': db_time,
-                    'request': info['request'],
-                    'response': info['response'],
-                    'profile': info.get('profile'),
-                    'session': info['session']
-                }), 200, {
-                    'Access-Control-Allow-Origin': '*'
-                }
+            with self._request_lock:
+                if uuid in self._request_info:
+                    info = self._request_info[uuid]
+                    db_time = reduce(
+                        lambda a, b: a + b,
+                        map(lambda x: x['query_time'], info['queries']),
+                        0
+                    )
+                    return jsonify({
+                        'queries': info['queries'],
+                        'total_time': info['end_time'] - info['start_time'],
+                        'database_time': db_time,
+                        'request': info['request'],
+                        'response': info['response'],
+                        'profile': info.get('profile'),
+                        'session': info['session']
+                    }), 200, {
+                        'Access-Control-Allow-Origin': '*'
+                    }
             return ('Not Found', 404, {
                 'Content-Type': 'text/plain',
                 'Access-Control-Allow-Origin': '*'
@@ -109,9 +178,10 @@ class Flaskwork(object):
             except RuntimeError:
                 pass
             else:
-                if hasattr(request, 'uuid') and request.uuid in self._request_info:
-                    self._request_info[request.uuid]['queries'].append({
-                        'statement': statement % params,
-                        'query_time': total_time
-                    })
-
+                with self._request_lock:
+                    if hasattr(request, 'uuid') and (
+                            request.uuid in self._request_info):
+                        self._request_info[request.uuid]['queries'].append({
+                            'statement': statement % params,
+                            'query_time': total_time
+                        })
