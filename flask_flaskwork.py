@@ -147,6 +147,6 @@ class Flaskwork(object):
                     if hasattr(request, 'uuid') and (
                             request.uuid in self._request_info):
                         self._request_info[request.uuid]['queries'].append({
-                            'statement': statement % params,
+                            'statement': statement,
                             'query_time': total_time
                         })
