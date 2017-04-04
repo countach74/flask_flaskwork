@@ -1,8 +1,11 @@
-import uuid
-import time
-import datetime
 import cProfile
+import datetime
 import pstats
+import time
+import uuid
+
+import sqlparse
+
 try:
     from StringIO import StringIO
 except ImportError:
@@ -10,9 +13,9 @@ except ImportError:
 from functools import reduce
 from sqlalchemy.engine import Engine
 from sqlalchemy.event import listens_for
-from flask import jsonify, abort, request, session, url_for
+from flask import jsonify, request, session, url_for
 from flask.ctx import has_request_context
-from threading import Thread, RLock
+from threading import RLock
 
 
 class Flaskwork(object):
@@ -37,7 +40,7 @@ class Flaskwork(object):
                 deleted_items = []
                 for request_uuid, info in self._request_info.items():
                     if info['timestamp'] < cutoff:
-                        del(self._request_info[request_uuid])
+                        del (self._request_info[request_uuid])
                         deleted_items.append(request_uuid)
                 self._last_cleanup = datetime.datetime.now()
 
@@ -122,8 +125,8 @@ class Flaskwork(object):
                         'profile': info.get('profile'),
                         'session': info['session']
                     }), 200, {
-                        'Access-Control-Allow-Origin': '*'
-                    }
+                               'Access-Control-Allow-Origin': '*'
+                           }
             return ('Not Found', 404, {
                 'Content-Type': 'text/plain',
                 'Access-Control-Allow-Origin': '*'
@@ -131,7 +134,7 @@ class Flaskwork(object):
 
         @listens_for(Engine, 'before_cursor_execute')
         def before_cursor_execute(
-                conn, cursor, statement, params, context, executemany):
+            conn, cursor, statement, params, context, executemany):
             if app.debug:
                 conn.info.setdefault('query_start_time', []).append(
                     time.time())
@@ -146,6 +149,8 @@ class Flaskwork(object):
 
                 statement %= params
 
+            statement = sqlparse.format(statement, reindent=True)
+
             self._request_info[request.uuid]['queries'].append({
                 'statement': statement,
                 'query_time': total_time
@@ -153,7 +158,7 @@ class Flaskwork(object):
 
         @listens_for(Engine, 'after_cursor_execute')
         def after_cursor_execute(
-                conn, cursor, statement, params, context, executemany):
+            conn, cursor, statement, params, context, executemany):
             if app.debug and has_request_context():
                 total_time = (
                     time.time() - conn.info['query_start_time'].pop(-1)
