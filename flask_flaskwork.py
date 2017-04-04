@@ -19,7 +19,7 @@ class Flaskwork(object):
     def __init__(self, app=None, cleanup_interval=None, route=None):
         self.app = app
         self.cleanup_interval = cleanup_interval or datetime.timedelta(
-            seconds=30
+            seconds=300
         )
         self.route = route or '/__flaskwork/<string:uuid>'
 
@@ -136,6 +136,21 @@ class Flaskwork(object):
                 conn.info.setdefault('query_start_time', []).append(
                     time.time())
 
+        def _request_info_queries(statement, params, total_time):
+            """Given a statement and it's params return the correctly formatted SQL statement + it's time"""
+
+            if params and isinstance(params, dict):
+                for k, v in params.items():
+                    # Add quotes to the values so we can just paste it in our SQL CLI.
+                    params[k] = "'%s'" % v
+
+                statement %= params
+
+            self._request_info[request.uuid]['queries'].append({
+                'statement': statement,
+                'query_time': total_time
+            })
+
         @listens_for(Engine, 'after_cursor_execute')
         def after_cursor_execute(
                 conn, cursor, statement, params, context, executemany):
@@ -146,7 +161,9 @@ class Flaskwork(object):
                 with self._request_lock:
                     if hasattr(request, 'uuid') and (
                             request.uuid in self._request_info):
-                        self._request_info[request.uuid]['queries'].append({
-                            'statement': statement,
-                            'query_time': total_time
-                        })
+
+                        if executemany:
+                            for param in params:
+                                _request_info_queries(statement, param, total_time)
+                        else:
+                            _request_info_queries(statement, params, total_time)
