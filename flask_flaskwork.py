@@ -34,11 +34,7 @@ class Flaskwork(object):
         with self._request_lock:
             cutoff = datetime.datetime.now() - self.cleanup_interval
             if self._last_cleanup < cutoff:
-                deleted_items = []
-                for request_uuid, info in self._request_info.items():
-                    if info['timestamp'] < cutoff:
-                        del(self._request_info[request_uuid])
-                        deleted_items.append(request_uuid)
+                self._request_info = {key: value for key, value in self._request_info.items() if value['timestamp'] >= cutoff}
                 self._last_cleanup = datetime.datetime.now()
 
     def init_app(self, app):
