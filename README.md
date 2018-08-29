@@ -18,4 +18,6 @@ Flaskwork(app)
 
 ## View requests information
 
-Install chrome extension [Flaskwork](https://chrome.google.com/webstore/detail/flaskwork/hhigcljgpoilbfcdfemloacfgehakacc)
+1. Install chrome extension [Flaskwork](https://chrome.google.com/webstore/detail/flaskwork/hhigcljgpoilbfcdfemloacfgehakacc)
+2. Open developer tools.
+3. Open Flaskwork tab.
